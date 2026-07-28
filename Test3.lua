@@ -1,4 +1,4 @@
--- Restore Peace: меню с ручным управлением, серверный счётчик
+-- Restore Peace: мобильное меню, перетаскивание, полёт для телефона
 local player = game.Players.LocalPlayer
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -24,10 +24,35 @@ screenGui.Parent = player:WaitForChild("PlayerGui")
 
 local frame = Instance.new("Frame")
 frame.Size = UDim2.new(0, 220, 0, 260)
-frame.Position = UDim2.new(0.8, 0, 0.2, 0)
+frame.Position = UDim2.new(0.1, 0, 0.1, 0)  -- левый верхний угол
 frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 frame.BorderSizePixel = 0
 frame.Parent = screenGui
+
+-- Делаем меню перетаскиваемым
+local UserInputService = game:GetService("UserInputService")
+local dragging = false
+local dragInput, dragStart, startPos
+
+frame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = frame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+frame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch and dragging then
+        local delta = input.Position - dragStart
+        frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
 
 -- Заголовок
 local title = Instance.new("TextLabel")
@@ -151,34 +176,63 @@ local function paintGrass()
     end
 end
 
--- Полёт с управлением WASD
+-- Полёт для телефона (виртуальный джойстик)
 function enableFly()
     local rootPart = player.Character:WaitForChild("HumanoidRootPart")
-    player.Character:WaitForChild("Humanoid").PlatformStand = true
+    local humanoid = player.Character:WaitForChild("Humanoid")
+    humanoid.PlatformStand = true
 
     bodyGyro = Instance.new("BodyGyro", rootPart)
     bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+    bodyGyro.CFrame = rootPart.CFrame
 
     bodyVelocity = Instance.new("BodyVelocity", rootPart)
     bodyVelocity.MaxForce = Vector3.new(400000, 400000, 400000)
+    bodyVelocity.Velocity = Vector3.zero
 
-    local moveVector = Vector3.zero
+    -- Виртуальный джойстик
+    local joystick = Instance.new("ScreenGui")
+    joystick.Parent = player:WaitForChild("PlayerGui")
+    local joystickFrame = Instance.new("Frame", joystick)
+    joystickFrame.Size = UDim2.new(0, 120, 0, 120)
+    joystickFrame.Position = UDim2.new(0.1, 0, 0.6, 0) -- левый нижний угол
+    joystickFrame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    joystickFrame.BackgroundTransparency = 0.7
+    joystickFrame.AnchorPoint = Vector2.new(0.5, 0.5)
 
-    UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if not flyEnabled or gameProcessed then return end
-        if input.KeyCode == Enum.KeyCode.W then moveVector += rootPart.CFrame.LookVector
-        elseif input.KeyCode == Enum.KeyCode.S then moveVector -= rootPart.CFrame.LookVector
-        elseif input.KeyCode == Enum.KeyCode.A then moveVector -= rootPart.CFrame.RightVector
-        elseif input.KeyCode == Enum.KeyCode.D then moveVector += rootPart.CFrame.RightVector
-        elseif input.KeyCode == Enum.KeyCode.Space then moveVector += Vector3.new(0, 1, 0)
-        elseif input.KeyCode == Enum.KeyCode.LeftShift then moveVector -= Vector3.new(0, 1, 0) end
-        bodyVelocity.Velocity = moveVector * 50
+    local thumb = Instance.new("Frame", joystickFrame)
+    thumb.Size = UDim2.new(0, 40, 0, 40)
+    thumb.Position = UDim2.new(0.5, 0, 0.5, 0)
+    thumb.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    thumb.AnchorPoint = Vector2.new(0.5, 0.5)
+
+    local drag = false
+    local moveConnection
+
+    joystickFrame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch then
+            drag = true
+            moveConnection = RunService.Heartbeat:Connect(function()
+                local delta = UserInputService:GetMouseLocation() - joystickFrame.AbsolutePosition
+                thumb.Position = UDim2.new(0, delta.X, 0, delta.Y)
+                local direction = Vector3.new(delta.X / 60, 0, -delta.Y / 60)
+                bodyVelocity.Velocity = (rootPart.CFrame:VectorToWorldSpace(direction)) * 50
+            end)
+        end
     end)
 
-    UserInputService.InputEnded:Connect(function()
-        if not flyEnabled then return end
-        moveVector = Vector3.zero
-        bodyVelocity.Velocity = Vector3.zero
+    joystickFrame.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch then
+            drag = false
+            if moveConnection then moveConnection:Disconnect() end
+            thumb.Position = UDim2.new(0.5, 0, 0.5, 0)
+            bodyVelocity.Velocity = Vector3.zero
+        end
+    end)
+
+    -- Удаление джойстика при выключении
+    bodyVelocity.Destroying:Connect(function()
+        joystick:Destroy()
     end)
 end
 
